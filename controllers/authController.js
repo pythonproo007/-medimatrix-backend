@@ -8,17 +8,23 @@ const login = async (req, res) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) {
-      return res.status(400).json({ success: false, error: 'Username and password are required' });
+      return res.status(400).json({ success: false, error: 'Username/Email and password are required' });
     }
 
-    const user = await User.findOne({ username });
+    const cleanInput = username.trim();
+    const user = await User.findOne({
+      $or: [
+        { username: new RegExp('^' + cleanInput + '$', 'i') },
+        { email: new RegExp('^' + cleanInput + '$', 'i') }
+      ]
+    });
     if (!user || !user.isActive) {
-      return res.status(401).json({ success: false, error: 'Invalid credentials or inactive account' });
+      return res.status(401).json({ success: false, error: 'Invalid username/email or password' });
     }
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(401).json({ success: false, error: 'Invalid credentials' });
+      return res.status(401).json({ success: false, error: 'Invalid username/email or password' });
     }
 
     const token = jwt.sign(
