@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const mongoose = require('mongoose');
 const errorMiddleware = require('./middleware/errorMiddleware');
 
 const authRoutes = require('./routes/authRoutes');
@@ -24,6 +25,22 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Check DB connection for API requests
+app.use('/api', async (req, res, next) => {
+  if (mongoose.connection.readyState === 0) {
+    const connectDB = require('./config/db');
+    await connectDB();
+  }
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      error: 'Database Disconnected',
+      message: 'MongoDB connection is not active. Please ensure MongoDB service (mongod) is running and restart the backend.'
+    });
+  }
+  next();
+});
 
 // Uploads directory mapping
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

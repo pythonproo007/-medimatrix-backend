@@ -129,11 +129,19 @@ const createMedicine = async (req, res) => {
       sellingPrice,
       expiryDate,
       rackLocation,
-      requiresPrescription
+      requiresPrescription,
+      notes
     } = req.body;
 
-    const qtyNumber = Number(quantity);
-    let existingCode = await Medicine.findOne({ code });
+    const qtyNumber = Number(quantity || 0);
+    let existingCode = null;
+    if (code) {
+      existingCode = await Medicine.findOne({ code });
+    }
+    if (!existingCode && name) {
+      const escapedName = name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      existingCode = await Medicine.findOne({ name: { $regex: new RegExp(`^${escapedName}$`, 'i') } });
+    }
 
     // Ensure category and type exist in the DB
     if (category) {
@@ -161,8 +169,10 @@ const createMedicine = async (req, res) => {
     if (existingCode) {
       const prevQty = existingCode.quantity;
       existingCode.quantity += qtyNumber;
-      existingCode.batchNumber = batchNumber || existingCode.batchNumber;
-      existingCode.expiryDate = expiryDate || existingCode.expiryDate;
+      if (batchNumber) existingCode.batchNumber = batchNumber;
+      if (expiryDate) existingCode.expiryDate = expiryDate;
+      if (purchasePrice !== undefined && purchasePrice !== '') existingCode.purchasePrice = Number(purchasePrice);
+      if (sellingPrice !== undefined && sellingPrice !== '') existingCode.sellingPrice = Number(sellingPrice);
       if (medicineType) existingCode.medicineType = medicineType;
       if (activeIngredient) existingCode.activeIngredient = activeIngredient;
       await existingCode.save();
@@ -171,14 +181,17 @@ const createMedicine = async (req, res) => {
       let stockItem = await Stock.findOne({ medicineId: existingCode._id, batchNumber: existingCode.batchNumber });
       if (stockItem) {
         stockItem.currentQuantity += qtyNumber;
+        if (purchasePrice !== undefined && purchasePrice !== '') stockItem.purchasePrice = Number(purchasePrice);
+        if (sellingPrice !== undefined && sellingPrice !== '') stockItem.sellingPrice = Number(sellingPrice);
+        if (expiryDate) stockItem.expiryDate = expiryDate;
         await stockItem.save();
       } else {
         stockItem = await Stock.create({
           medicineId: existingCode._id,
           batchNumber: existingCode.batchNumber,
           currentQuantity: qtyNumber,
-          purchasePrice: Number(purchasePrice || existingCode.purchasePrice),
-          sellingPrice: Number(sellingPrice || existingCode.sellingPrice),
+          purchasePrice: Number(purchasePrice || existingCode.purchasePrice || 0),
+          sellingPrice: Number(sellingPrice || existingCode.sellingPrice || 0),
           expiryDate: expiryDate || existingCode.expiryDate,
           rackLocation: rackLocation || existingCode.rackLocation
         });
@@ -189,9 +202,9 @@ const createMedicine = async (req, res) => {
         medicineId: existingCode._id,
         batchNumber: existingCode.batchNumber,
         quantity: qtyNumber,
-        purchasePrice: Number(purchasePrice || existingCode.purchasePrice),
+        purchasePrice: Number(purchasePrice || existingCode.purchasePrice || 0),
         invoiceNumber: existingCode.code,
-        notes: 'Restock / Stock In Batch Addition'
+        notes: notes || 'Restock / Stock In Batch Addition'
       });
 
       // Create Notification
@@ -204,19 +217,22 @@ const createMedicine = async (req, res) => {
       return res.json({ success: true, message: 'Stock quantity updated successfully', data: existingCode });
     }
 
+    const defaultExpiry = new Date();
+    defaultExpiry.setFullYear(defaultExpiry.getFullYear() + 1);
+
     const medicine = await Medicine.create({
-      name,
+      name: name.trim(),
       code: code || `MED-${Math.floor(100000 + Math.random() * 900000)}`,
-      category,
+      category: category || 'General',
       medicineType: medicineType || 'Tablet',
-      activeIngredient: activeIngredient || name.split(' ')[0],
+      activeIngredient: activeIngredient || name.trim().split(' ')[0],
       manufacturer: manufacturer || 'Generic',
       batchNumber: batchNumber || `BT-${Date.now().toString().slice(-4)}`,
       quantity: qtyNumber,
       minStockAlert: Number(minStockAlert || 15),
-      purchasePrice: Number(purchasePrice),
-      sellingPrice: Number(sellingPrice),
-      expiryDate,
+      purchasePrice: Number(purchasePrice || 0),
+      sellingPrice: Number(sellingPrice || 0),
+      expiryDate: expiryDate || defaultExpiry,
       rackLocation: rackLocation || 'Shelf A1',
       requiresPrescription: Boolean(requiresPrescription)
     });
@@ -226,9 +242,9 @@ const createMedicine = async (req, res) => {
       medicineId: medicine._id,
       batchNumber: medicine.batchNumber,
       currentQuantity: qtyNumber,
-      purchasePrice: Number(purchasePrice),
-      sellingPrice: Number(sellingPrice),
-      expiryDate,
+      purchasePrice: Number(purchasePrice || 0),
+      sellingPrice: Number(sellingPrice || 0),
+      expiryDate: medicine.expiryDate,
       rackLocation: medicine.rackLocation
     });
 
@@ -237,9 +253,9 @@ const createMedicine = async (req, res) => {
       medicineId: medicine._id,
       batchNumber: medicine.batchNumber,
       quantity: qtyNumber,
-      purchasePrice: Number(purchasePrice),
+      purchasePrice: Number(purchasePrice || 0),
       invoiceNumber: medicine.code,
-      notes: 'Initial New Product Stock In'
+      notes: notes || 'Initial New Product Stock In'
     });
 
     await Notification.create({

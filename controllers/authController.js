@@ -12,10 +12,11 @@ const login = async (req, res) => {
     }
 
     const cleanInput = username.trim();
+    const escapedInput = cleanInput.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const user = await User.findOne({
       $or: [
-        { username: new RegExp('^' + cleanInput + '$', 'i') },
-        { email: new RegExp('^' + cleanInput + '$', 'i') }
+        { username: new RegExp('^' + escapedInput + '$', 'i') },
+        { email: new RegExp('^' + escapedInput + '$', 'i') }
       ]
     });
     if (!user || !user.isActive) {
